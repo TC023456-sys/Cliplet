@@ -22,9 +22,7 @@ jobs:
       - name: Prepare and verify Cliplet
         run: |
           python3 ClipletFork/prepare.py
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' Maccy/Info.plist)" = Cliplet
-          ! rg 'import Sparkle|SPUUpdater|SPUStandard' Maccy --glob '*.swift'
-          ! rg 'p0deje/Maccy|maccy.app' Maccy/SoftwareUpdater.swift Maccy/Info.plist
+          python3 ClipletFork/verify.py
           swiftc -swift-version 5 -parse-as-library Maccy/SoftwareUpdater.swift ClipletFork/update-test.swift -o "$RUNNER_TEMP/update-test"
           "$RUNNER_TEMP/update-test"
       - name: Upstream unit tests

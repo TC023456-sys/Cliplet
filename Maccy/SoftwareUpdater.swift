@@ -1,6 +1,11 @@
 import AppKit
 import Observation
 
+private final class ClipletUpdateTimer {
+  var value: Timer?
+  deinit { value?.invalidate() }
+}
+
 /// Only checks this fork. No upstream feed, silent binary downloads or installs.
 @MainActor @Observable
 class SoftwareUpdater {
@@ -13,19 +18,18 @@ class SoftwareUpdater {
       configureTimer()
     }
   }
-  private var timer: Timer?
+  private let timer = ClipletUpdateTimer()
   private var checking = false
 
   init() {
     automaticallyChecksForUpdates = UserDefaults.standard.bool(forKey: "ClipletAutomaticUpdates")
     configureTimer()
   }
-  deinit { timer?.invalidate() }
   private func configureTimer() {
-    timer?.invalidate()
-    timer = nil
+    timer.value?.invalidate()
+    timer.value = nil
     guard automaticallyChecksForUpdates else { return }
-    timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+    timer.value = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
       Task { @MainActor in await self?.check(manual: false) }
     }
     Task { await check(manual: false) }
