@@ -50,8 +50,8 @@ project = clean(project)
 for obj in project['objects'].values():
     settings = obj.get('buildSettings', {})
     if settings.get('PRODUCT_BUNDLE_IDENTIFIER') == identity:
-        settings['MARKETING_VERSION'] = '1.0.1'
-        settings['CURRENT_PROJECT_VERSION'] = '10001'
+        settings['MARKETING_VERSION'] = '1.0.2'
+        settings['CURRENT_PROJECT_VERSION'] = '10002'
         settings['DEVELOPMENT_TEAM'] = ''
 project_path.write_bytes(plistlib.dumps(project))
 resolved = root / 'Maccy.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved'
