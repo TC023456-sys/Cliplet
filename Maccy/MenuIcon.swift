@@ -12,7 +12,9 @@ enum MenuIcon: String, CaseIterable, Identifiable, Defaults.Serializable {
   var image: NSImage {
     switch self {
     case .maccy:
-      return NSImage(named: .maccyStatusBar)!
+      let image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Cliplet")!
+      image.isTemplate = true
+      return image
     case .clipboard:
       return NSImage(named: .clipboard)!
     case .scissors:

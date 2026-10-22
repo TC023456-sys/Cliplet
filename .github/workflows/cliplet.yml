@@ -1,0 +1,62 @@
+name: Build Cliplet
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cliplet-build
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          XC=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XC/Contents/Developer"
+      - name: Prepare and verify Cliplet
+        run: |
+          python3 ClipletFork/prepare.py
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' Maccy/Info.plist)" = Cliplet
+          ! rg 'import Sparkle|SPUUpdater|SPUStandard' Maccy --glob '*.swift'
+          ! rg 'p0deje/Maccy|maccy.app' Maccy/SoftwareUpdater.swift Maccy/Info.plist
+          swiftc -swift-version 5 -parse-as-library Maccy/SoftwareUpdater.swift ClipletFork/update-test.swift -o "$RUNNER_TEMP/update-test"
+          "$RUNNER_TEMP/update-test"
+      - name: Upstream unit tests
+        run: |
+          set -euo pipefail
+          xcodebuild test -scheme Maccy -configuration Debug -destination 'platform=macOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO -only-testing:MaccyTests > tests.log 2>&1 || { tail -120 tests.log; exit 1; }
+      - name: Universal Release build
+        run: |
+          set -euo pipefail
+          xcodebuild build -scheme Maccy -configuration Release -destination 'platform=macOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO > build.log 2>&1 || { tail -120 build.log; exit 1; }
+      - name: Sign and package
+        run: |
+          set -euo pipefail
+          mkdir -p dist package
+          ditto build/Build/Products/Release/Maccy.app package/Cliplet.app
+          cp LICENSE package/Cliplet.app/Contents/Resources/MIT-LICENSE.txt
+          cp ClipletFork/NOTICES.md package/Cliplet.app/Contents/Resources/CLIPLET-NOTICES.md
+          codesign --force --deep --sign - --timestamp=none --entitlements Maccy/Maccy.entitlements package/Cliplet.app
+          codesign --verify --deep --strict package/Cliplet.app
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' package/Cliplet.app/Contents/Info.plist)" = com.tc023456.Cliplet
+          test ! -d package/Cliplet.app/Contents/Frameworks/Sparkle.framework
+          ! otool -L package/Cliplet.app/Contents/MacOS/Maccy | grep Sparkle
+          ditto -c -k --sequesterRsrc --keepParent package/Cliplet.app dist/Cliplet-1.0.0.zip
+          git archive --format=zip HEAD -o dist/Cliplet-1.0.0-Source.zip
+          cp LICENSE dist/MIT-LICENSE.txt
+          shasum -a 256 dist/*.zip > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cliplet-1.0.0
+          path: dist/*
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Cliplet-build-logs
+          path: '*.log'
