@@ -23,7 +23,7 @@
 
 保留 Maccy 源码及内部模块名以降低改动风险。使用完整 Xcode 26：先运行 `python3 ClipletFork/prepare.py`，再按 [.github/workflows/cliplet.yml](.github/workflows/cliplet.yml) 运行测试、双架构 Release 构建和临时签名。
 
-`prepare.py` 生成所有标准图标尺寸，更新本修改版标识、本地化名称和网络权限，并移除 Sparkle 工程依赖及旧 Icon Composer 资源引用。源码包保留图标原图与构建脚本，可以复现应用。
+`prepare.py` 生成旧版 macOS 的标准图标尺寸，并将原图机械裁边、合成为 macOS 26 使用的满幅 Icon Composer 图层，避免重复底板和缩小。更新本修改版标识、本地化名称和网络权限，移除 Sparkle 工程依赖。源码包保留图标原图与构建脚本，可以复现应用。
 
 ## 原作者与许可
 

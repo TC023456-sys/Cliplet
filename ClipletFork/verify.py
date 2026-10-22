@@ -1,6 +1,7 @@
 """Verify generated source, not merely the branding script's presence."""
 from pathlib import Path
 import plistlib
+import json
 root = Path(__file__).resolve().parents[1]
 app = root / 'Maccy'
 info = plistlib.loads((app / 'Info.plist').read_bytes())
@@ -23,4 +24,8 @@ assert 'Alexey Rodionov' in (app / 'About.swift').read_text()
 assert 'https://github.com/p0deje/Maccy' in (app / 'About.swift').read_text()
 assert 'Text("Cliplet")' in (app / 'Views/ListHeaderView.swift').read_text()
 assert not (root / 'appcast.xml').exists()
+composer = json.loads((app / 'AppIcon.icon/icon.json').read_text())
+assert composer == json.loads((root / 'ClipletFork/AppIcon.json').read_text())
+assert (app / 'AppIcon.icon/Assets/Cliplet.png').exists()
+assert any(o.get('path') == 'AppIcon.icon' for o in project['objects'].values())
 print('PASS: fork identity, attribution, independent updates and removed Sparkle verified.')

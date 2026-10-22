@@ -32,7 +32,7 @@ project = json.loads(subprocess.check_output(['plutil', '-convert', 'json', '-o'
 objects = project['objects']
 removed = {key for key, obj in objects.items()
            if obj.get('productName') == 'Sparkle' or 'sparkle-project/Sparkle' in obj.get('repositoryURL', '')
-           or obj.get('path') in {'AppIcon.icon', 'appcast.xml'}}
+           or obj.get('path') == 'appcast.xml'}
 removed |= {key for key, obj in objects.items()
             if obj.get('isa') == 'PBXBuildFile'
             and (obj.get('productRef') in removed or obj.get('fileRef') in removed)}
@@ -50,8 +50,8 @@ project = clean(project)
 for obj in project['objects'].values():
     settings = obj.get('buildSettings', {})
     if settings.get('PRODUCT_BUNDLE_IDENTIFIER') == identity:
-        settings['MARKETING_VERSION'] = '1.0.0'
-        settings['CURRENT_PROJECT_VERSION'] = '10000'
+        settings['MARKETING_VERSION'] = '1.0.1'
+        settings['CURRENT_PROJECT_VERSION'] = '10001'
         settings['DEVELOPMENT_TEAM'] = ''
 project_path.write_bytes(plistlib.dumps(project))
 resolved = root / 'Maccy.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved'
@@ -80,4 +80,11 @@ for item in images:
     size = round(float(item['size'].split('x')[0]) * float(item['scale'].replace('x', '')))
     subprocess.run(['sips', '-z', str(size), str(size), str(icon), '--out', str(catalog / item['filename'])],
                    check=True, stdout=subprocess.DEVNULL)
+composer = app / 'AppIcon.icon'
+(composer / 'icon.json').write_text((root / 'ClipletFork/AppIcon.json').read_text())
+subprocess.run(['swift', str(root / 'ClipletFork/compile-icon.swift'), str(icon),
+                str(composer / 'Assets/Cliplet.png')], check=True)
+# Only the approved layer is referenced. Remove obsolete upstream artwork from the generated bundle.
+for filename in ['0 - Layer.svg', '1 - Layer.svg', '2 - Layer.svg', '3 - Layer.svg']:
+    (composer / 'Assets' / filename).unlink(missing_ok=True)
 print('PASS: Cliplet identity, MIT attribution, update dependency isolation and icon sizes prepared.')

@@ -1,4 +1,4 @@
-# Cliplet 1.0.0
+# Cliplet 1.0.1
 
 修改版维护：TC023456-sys。基于 p0deje/Maccy 2.7.1（eb03ebac3bbf24044c797c06f4304b74e3187835），非上游官方发布。
 
