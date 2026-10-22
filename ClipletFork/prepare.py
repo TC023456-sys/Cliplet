@@ -32,7 +32,7 @@ project = json.loads(subprocess.check_output(['plutil', '-convert', 'json', '-o'
 objects = project['objects']
 removed = {key for key, obj in objects.items()
            if obj.get('productName') == 'Sparkle' or 'sparkle-project/Sparkle' in obj.get('repositoryURL', '')
-           or obj.get('path') == 'AppIcon.icon'}
+           or obj.get('path') in {'AppIcon.icon', 'appcast.xml'}}
 removed |= {key for key, obj in objects.items()
             if obj.get('isa') == 'PBXBuildFile'
             and (obj.get('productRef') in removed or obj.get('fileRef') in removed)}
@@ -62,6 +62,9 @@ resolved.write_text(json.dumps(pins, indent=2) + '\n')
 for path in app.rglob('*.strings'):
     text = path.read_text()
     path.write_text(text.replace('org.p0deje.Maccy', identity).replace('Maccy', 'Cliplet'))
+for path in (app / 'Intents').glob('*.swift'):
+    path.write_text(path.read_text().replace('Maccy clipboard history', 'Cliplet clipboard history')
+                    .replace('Depending on Maccy settings', 'Depending on Cliplet settings'))
 for relative in ['AppDelegate.swift', 'Extensions/Defaults.Keys+Names.swift',
                  'Extensions/NSPasteboard.PasteboardType+Types.swift',
                  'Observables/History.swift', 'Observables/SlideoutController.swift']:
