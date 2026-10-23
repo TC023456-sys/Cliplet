@@ -250,6 +250,29 @@ class ClipboardTests: XCTestCase {
     XCTAssertNil(pasteboard.data(forType: .rtf))
   }
 
+  @MainActor
+  func testPlainTextTrimsOuterLineEndingsWithoutChangingStoredHistory() {
+    let original = "\r\nSP236378\r\n"
+    let item = HistoryItem()
+    Storage.shared.context.insert(item)
+    item.contents = [HistoryItemContent(type: stringType.rawValue, value: Data(original.utf8))]
+    clipboard.copy(item, removeFormatting: true)
+    XCTAssertEqual(pasteboard.string(forType: .string), "SP236378")
+    XCTAssertEqual(item.contents.first?.value, Data(original.utf8))
+    clipboard.copy(item, removeFormatting: false)
+    XCTAssertEqual(pasteboard.string(forType: .string), original)
+  }
+
+  @MainActor
+  func testPlainTextPreservesTableColumnsAndInternalLineBreaks() {
+    let body = "  A\tB\nC\tD  "
+    let item = HistoryItem()
+    Storage.shared.context.insert(item)
+    item.contents = [HistoryItemContent(type: stringType.rawValue, value: Data(("\n" + body + "\r\n").utf8))]
+    clipboard.copy(item, removeFormatting: true)
+    XCTAssertEqual(pasteboard.string(forType: .string), body)
+  }
+
   func testHandlesItemsWithoutData() {
     let hookExpectation = expectation(description: "Hook is called")
     pasteboard.clearContents()

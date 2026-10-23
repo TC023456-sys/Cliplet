@@ -111,7 +111,7 @@ class Clipboard {
 
   // Based on https://github.com/Clipy/Clipy/blob/develop/Clipy/Sources/Services/PasteService.swift.
   func paste() {
-    Accessibility.check()
+    guard Accessibility.check() else { return }
 
     // Add flag that left/right modifier key has been pressed.
     // See https://github.com/TermiT/Flycut/pull/18 for details.
@@ -307,7 +307,16 @@ class Clipboard {
     // If there is no string representation of data,
     // behave like we didn't have to remove formatting.
     if !stringContents.isEmpty {
-      newContents = stringContents
+      // Strip only outer line endings in plain-text mode. Preserve spaces,
+      // tabs and internal newlines so multi-cell tables and multiline cells survive.
+      // Do not mutate the stored history: formatted copy must retain the original.
+      newContents = stringContents.map { content in
+        guard let data = content.value, let text = String(data: data, encoding: .utf8) else {
+          return content
+        }
+        let cleaned = text.trimmingCharacters(in: .newlines)
+        return HistoryItemContent(type: content.type, value: Data(cleaned.utf8))
+      }
 
       // Preserve file URLs.
       // https://github.com/p0deje/Maccy/issues/962
