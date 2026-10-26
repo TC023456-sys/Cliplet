@@ -1,7 +1,7 @@
 name: Build Cliplet
 on:
   push:
-    branches: [main, fix/plain-text-paste, fix/memory-retention, fix/pinyin-activation]
+    branches: [main, fix/plain-text-paste, fix/memory-retention, fix/pinyin-activation, fix/pinyin-compatible-build]
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -29,6 +29,20 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild test -scheme Maccy -configuration Debug -destination 'platform=macOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO -only-testing:MaccyTests > tests.log 2>&1 || { tail -120 tests.log; exit 1; }
+      - name: Use the existing PNG app icon on the compatibility runner
+        run: |
+          python3 - <<'PYICON'
+          import plistlib
+          from pathlib import Path
+          p=Path('Maccy.xcodeproj/project.pbxproj')
+          d=plistlib.loads(p.read_bytes()); o=d['objects']
+          refs={k for k,v in o.items() if v.get('path')=='AppIcon.icon'}
+          builds={k for k,v in o.items() if v.get('isa')=='PBXBuildFile' and v.get('fileRef') in refs}
+          for v in o.values():
+              if isinstance(v.get('files'),list): v['files']=[x for x in v['files'] if x not in builds]
+          for k in builds: del o[k]
+          p.write_bytes(plistlib.dumps(d))
+          PYICON
       - name: Universal Release build
         run: |
           set -euo pipefail
