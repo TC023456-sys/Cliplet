@@ -3,6 +3,7 @@ import Defaults
 import Sauce
 import SwiftData
 import Vision
+import ImageIO
 
 @Model
 class HistoryItem {
@@ -75,6 +76,43 @@ class HistoryItem {
   var contents: [HistoryItemContent] = []
 
   @Transient private var cachedDecodedImage: NSImage?
+  @Transient private var recognitionGeneration = 0
+  private static let recognitionQueue = DispatchQueue(label: "com.tc023456.Cliplet.ocr", qos: .utility)
+
+  // Checking a row's content type must not construct/cache a full-size image
+  // while SwiftUI is calculating its body or layout.
+  var hasImageRepresentation: Bool {
+    contents.contains { Self.imageTypes.contains(NSPasteboard.PasteboardType($0.type)) }
+      || universalClipboardImage
+  }
+
+  var imagePixelSize: NSSize? {
+    guard let data = imageData,
+          let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+          let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+          let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+          let height = properties[kCGImagePropertyPixelHeight] as? NSNumber else { return nil }
+    return NSSize(width: width.doubleValue, height: height.doubleValue)
+  }
+
+  @MainActor
+  func downsampledImage(fitting bounds: NSSize) -> NSImage? {
+    guard let data = imageData,
+          let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+          let logicalSize = NSImage(data: data)?.size,
+          logicalSize.width > 0, logicalSize.height > 0 else { return nil }
+    let ratio = min(1, min(bounds.width / logicalSize.width, bounds.height / logicalSize.height))
+    let target = NSSize(width: logicalSize.width * ratio, height: logicalSize.height * ratio)
+    let scale = NSScreen.forPopup?.backingScaleFactor ?? 2
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: max(1, Int(ceil(max(target.width, target.height) * scale))),
+      kCGImageSourceShouldCacheImmediately: true
+    ]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+    return NSImage(cgImage: image, size: target)
+  }
 
   init(contents: [HistoryItemContent] = []) {
     self.firstCopiedAt = firstCopiedAt
@@ -93,10 +131,8 @@ class HistoryItem {
   }
 
   func generateTitle() -> String {
-    guard image == nil else {
-      Task {
-        self.performTextRecognition()
-      }
+    guard !hasImageRepresentation else {
+      scheduleTextRecognition()
       return ""
     }
 
@@ -229,31 +265,34 @@ class HistoryItem {
       .compactMap { $0.value }
   }
 
-  private func performTextRecognition() {
-    guard let cgImage = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-      return
+  func cancelTextRecognition() { recognitionGeneration &+= 1 }
+
+  private func scheduleTextRecognition() {
+    guard let data = imageData else { return }
+    recognitionGeneration &+= 1
+    let generation = recognitionGeneration
+    // Vision runs serially off the UI thread; only immutable image bytes
+    // cross queues. Results are applied to the model on the main thread.
+    Self.recognitionQueue.async { [weak self] in
+      let text: String? = autoreleasepool {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 3072,
+                kCGImageSourceShouldCacheImmediately: true
+              ] as CFDictionary) else { return nil }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .fast
+        do {
+          try VNImageRequestHandler(cgImage: image).perform([request])
+          return request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        } catch { return nil }
+      }
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.recognitionGeneration == generation, let text else { return }
+        self.title = text
+      }
     }
-
-    let requestHandler = VNImageRequestHandler(cgImage: cgImage)
-    let request = VNRecognizeTextRequest(completionHandler: recognizeTextHandler)
-    request.recognitionLevel = .fast
-
-    do {
-      try requestHandler.perform([request])
-    } catch {
-      print("Unable to perform the request: \(error).")
-    }
-  }
-
-  private func recognizeTextHandler(request: VNRequest, error: Error?) {
-    guard let observations = request.results as? [VNRecognizedTextObservation] else {
-      return
-    }
-
-    let recognizedStrings = observations.compactMap { observation in
-      return observation.topCandidates(1).first?.string
-    }
-
-    self.title = recognizedStrings.joined(separator: "\n")
   }
 }
