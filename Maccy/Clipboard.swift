@@ -33,7 +33,8 @@ class Clipboard {
   private var enabledTypes: Set<NSPasteboard.PasteboardType> { Defaults[.enabledPasteboardTypes] }
   private var disabledTypes: Set<NSPasteboard.PasteboardType> { supportedTypes.subtracting(enabledTypes) }
 
-  private var sourceApp: NSRunningApplication? { NSWorkspace.shared.frontmostApplication }
+  var sourceApplicationProvider: () -> NSRunningApplication? = { NSWorkspace.shared.frontmostApplication }
+  private var sourceApp: NSRunningApplication? { sourceApplicationProvider() }
 
   init() {
     changeCount = pasteboard.changeCount

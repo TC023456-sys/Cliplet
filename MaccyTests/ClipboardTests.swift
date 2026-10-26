@@ -20,6 +20,8 @@ class ClipboardTests: XCTestCase {
   let transientType = NSPasteboard.PasteboardType.transient
   let unknownType = NSPasteboard.PasteboardType(rawValue: "com.apple.AnnotationKit.AnnotationItem")
 
+  let savedSourceApplicationProvider = Clipboard.shared.sourceApplicationProvider
+
   let savedEnabledTypes = Defaults[.enabledPasteboardTypes]
   let savedIgnoreEvents = Defaults[.ignoreEvents]
   let savedIgnoreAllAppsExceptListed = Defaults[.ignoreAllAppsExceptListed]
@@ -28,12 +30,14 @@ class ClipboardTests: XCTestCase {
 
   override func setUp() {
     super.setUp()
+    clipboard.sourceApplicationProvider = { NSRunningApplication.current }
     Defaults[.ignoreAllAppsExceptListed] = false
     Defaults[.ignoreEvents] = false
   }
 
   override func tearDown() {
     super.tearDown()
+    clipboard.sourceApplicationProvider = savedSourceApplicationProvider
     Defaults[.enabledPasteboardTypes] = savedEnabledTypes
     Defaults[.ignoreEvents] = savedIgnoreEvents
     Defaults[.ignoreOnlyNextEvent] = false
@@ -136,8 +140,8 @@ class ClipboardTests: XCTestCase {
     XCTAssertFalse(Defaults[.ignoreOnlyNextEvent])
   }
 
-  func testIgnoreApplication() {
-    Defaults[.ignoredApps] = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
+  func testIgnoreApplication() throws {
+    Defaults[.ignoredApps] = [try XCTUnwrap(NSRunningApplication.current.bundleIdentifier)]
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
@@ -150,9 +154,9 @@ class ClipboardTests: XCTestCase {
     waitForExpectations(timeout: 2)
   }
 
-  func testIgnoreAllApplicationsExcept() {
+  func testIgnoreAllApplicationsExcept() throws {
     Defaults[.ignoreAllAppsExceptListed] = true
-    Defaults[.ignoredApps] = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
+    Defaults[.ignoredApps] = [try XCTUnwrap(NSRunningApplication.current.bundleIdentifier)]
 
     let hookExpectation = expectation(description: "Hook is called")
     clipboard.onNewCopy({ (_: HistoryItem) in
