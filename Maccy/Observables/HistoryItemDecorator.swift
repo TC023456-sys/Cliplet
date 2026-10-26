@@ -10,7 +10,10 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
     return lhs.id == rhs.id
   }
 
-  static var previewImageSize: NSSize { NSScreen.forPopup?.visibleFrame.size ?? NSSize(width: 2048, height: 1536) }
+  static var previewImageSize: NSSize {
+    let screen = NSScreen.forPopup?.visibleFrame.size ?? NSSize(width: 1024, height: 768)
+    return NSSize(width: min(screen.width, 1024), height: min(screen.height, 768))
+  }
   static var thumbnailImageSize: NSSize { NSSize(width: 340, height: Defaults[.imageMaxHeight]) }
 
   let id = UUID()
@@ -39,7 +42,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
     return url.deletingPathExtension().lastPathComponent
   }
 
-  var hasImage: Bool { item.image != nil }
+  var hasImage: Bool { item.hasImageRepresentation }
 
   var previewImageGenerationTask: Task<(), Error>?
   var thumbnailImageGenerationTask: Task<(), Error>?
@@ -57,10 +60,9 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
   var isUnpinned: Bool { item.pin == nil }
 
   func hash(into hasher: inout Hasher) {
-    // We need to hash title and attributedTitle, so SwiftUI knows it needs to update the view if they chage
+    // Identity must not change while an item is in SwiftUI/navigation sets.
+    // Observable title properties already invalidate their reading views.
     hasher.combine(id)
-    hasher.combine(title)
-    hasher.combine(attributedTitle)
   }
 
   private(set) var item: HistoryItem
@@ -77,7 +79,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
 
   @MainActor
   func ensureThumbnailImage() {
-    guard item.image != nil else {
+    guard item.hasImageRepresentation else {
       return
     }
     guard thumbnailImage == nil else {
@@ -87,13 +89,15 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
       return
     }
     thumbnailImageGenerationTask = Task { [weak self] in
-      self?.generateThumbnailImage()
+      guard !Task.isCancelled, let self else { return }
+      self.generateThumbnailImage()
+      self.thumbnailImageGenerationTask = nil
     }
   }
 
   @MainActor
   func ensurePreviewImage() {
-    guard item.image != nil else {
+    guard item.hasImageRepresentation else {
       return
     }
     guard previewImage == nil else {
@@ -103,7 +107,9 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
       return
     }
     previewImageGenerationTask = Task { [weak self] in
-      self?.generatePreviewImage()
+      guard !Task.isCancelled, let self else { return }
+      self.generatePreviewImage()
+      self.previewImageGenerationTask = nil
     }
   }
 
@@ -121,8 +127,8 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
   func cleanupImages() {
     thumbnailImageGenerationTask?.cancel()
     previewImageGenerationTask?.cancel()
-    thumbnailImage?.recache()
-    previewImage?.recache()
+    thumbnailImageGenerationTask = nil
+    previewImageGenerationTask = nil
     thumbnailImage = nil
     previewImage = nil
     item.clearDecodedImageCache()
@@ -130,18 +136,20 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
 
   @MainActor
   private func generateThumbnailImage() {
-    guard let image = item.image else {
-      return
-    }
-    thumbnailImage = image.resized(to: HistoryItemDecorator.thumbnailImageSize)
+    thumbnailImage = item.downsampledImage(fitting: HistoryItemDecorator.thumbnailImageSize)
   }
 
   @MainActor
   private func generatePreviewImage() {
-    guard let image = item.image else {
-      return
-    }
-    previewImage = image.resized(to: HistoryItemDecorator.previewImageSize)
+    previewImage = item.downsampledImage(fitting: HistoryItemDecorator.previewImageSize)
+  }
+
+  @MainActor
+  func cleanupPreview() {
+    previewImageGenerationTask?.cancel()
+    previewImageGenerationTask = nil
+    previewImage = nil
+    item.clearDecodedImageCache()
   }
 
   @MainActor
@@ -190,8 +198,9 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
   private func synchronizeItemPin() {
     _ = withObservationTracking {
       item.pin
-    } onChange: {
-      DispatchQueue.main.async {
+    } onChange: { [weak self] in
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
         if let pin = self.item.pin {
           self.shortcuts = KeyShortcut.create(character: pin)
         }
@@ -203,8 +212,9 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
   private func synchronizeItemTitle() {
     _ = withObservationTracking {
       item.title
-    } onChange: {
-      DispatchQueue.main.async {
+    } onChange: { [weak self] in
+      DispatchQueue.main.async { [weak self] in
+        guard let self else { return }
         self.title = self.item.title
         self.synchronizeItemTitle()
       }
