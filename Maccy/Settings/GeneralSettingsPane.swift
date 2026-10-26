@@ -15,6 +15,8 @@ struct GeneralSettingsPane: View {
   @State private var pasteModifier = HistoryItemAction.paste.modifierFlags.description
   @State private var pasteWithoutFormatting = HistoryItemAction.pasteWithoutFormatting.modifierFlags.description
 
+  @ObservedObject private var pinyinRecovery = PinyinFocusRecovery.shared
+
   @State private var updater = SoftwareUpdater()
 
   var body: some View {
@@ -98,6 +100,13 @@ struct GeneralSettingsPane: View {
         .fixedSize(horizontal: false, vertical: true)
         .foregroundStyle(.gray)
         .controlSize(.small)
+      }
+
+      Settings.Section(title: "远程输入") {
+        Toggle("拼音输入自动修复", isOn: $pinyinRecovery.enabled)
+        Text(pinyinRecovery.statusText).font(.caption).foregroundStyle(.secondary)
+        Text("进入文字输入框时自动恢复拼音连接，无需快捷键。").font(.caption).foregroundStyle(.secondary)
+        Button("重新检查权限") { pinyinRecovery.start() }
       }
 
       Settings.Section(title: "") {
