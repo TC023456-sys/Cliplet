@@ -83,6 +83,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     orderFrontRegardless()
     makeKey()
     isPresented = true
+    AppState.shared.history.prepareImagesForPresentation()
 
     if popupPosition == .statusItem {
       DispatchQueue.main.async {
@@ -92,6 +93,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   func verticallyResize(to newHeight: CGFloat) {
+    guard newHeight.isFinite, abs(frame.height - newHeight) > 0.5 else { return }
     var newSize = frame.size
     newSize.height = newHeight
     var newOrigin = frame.origin
