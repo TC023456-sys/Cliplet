@@ -61,11 +61,11 @@ class HistoryItemDecoratorTests: XCTestCase {
     XCTAssertTrue(set.contains(decorator))
   }
 
-  func testImageTasksCanRestartAfterCacheCleanup() async {
+  func testImageTasksCanRestartAfterCacheCleanup() async throws {
     let decorator = historyItemDecorator(NSImage(named: "NSApplicationIcon")!)
     decorator.ensureThumbnailImage()
     let first = decorator.thumbnailImageGenerationTask
-    await first?.value
+    try await first?.value
     XCTAssertNotNil(decorator.thumbnailImage)
     XCTAssertNil(decorator.thumbnailImageGenerationTask)
     decorator.cleanupImages()
@@ -73,7 +73,7 @@ class HistoryItemDecoratorTests: XCTestCase {
     XCTAssertNil(decorator.previewImage)
     decorator.ensureThumbnailImage()
     let second = decorator.thumbnailImageGenerationTask
-    await second?.value
+    try await second?.value
     XCTAssertNotNil(decorator.thumbnailImage)
   }
 
