@@ -233,6 +233,9 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
   var workspaceToken: NSObjectProtocol?
   var sourceToken: NSObjectProtocol?
   var lastField: AXUIElement?
+  var preparedField: AXUIElement?
+  var preparedPID: pid_t = 0
+  var typingGeneration = 0
   var pending: DispatchWorkItem?
   var restoring = false
   var disabledForSession = false
@@ -304,6 +307,7 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
     observer = nil
     observedApp = nil
     lastField = nil
+    preparedField = nil
     guard enabled, !disabledForSession, AXIsProcessTrusted(), tap != nil,
           let app = NSWorkspace.shared.frontmostApplication,
           app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
@@ -325,24 +329,54 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
     schedule()
   }
 
+  // Focus changes prepare a candidate only. They never activate a window.
   func schedule() {
     guard enabled, !disabledForSession, !restoring, Date() >= ignoreUntil, tap != nil, isPinyin() else { return }
     pending?.cancel()
-    let job = DispatchWorkItem { [weak self] in self?.repair() }
+    preparedField = nil
+    let generation = typingGeneration
+    let job = DispatchWorkItem { [weak self] in
+      guard let self, generation == self.typingGeneration,
+            let (app, field) = self.focusedTextField(), !self.menuIsOpen(for: app) else { return }
+      if let lastField = self.lastField, CFEqual(lastField, field) { return }
+      self.preparedField = field
+      self.preparedPID = app.processIdentifier
+    }
     pending = job
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: job)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.02, execute: job)
   }
 
-  func repair() {
-    guard enabled, !disabledForSession, !restoring, !IsSecureEventInputEnabled(), Date() >= ignoreUntil, isPinyin(),
-          let (app, field) = focusedTextField() else { return }
-    if let lastField, CFEqual(lastField, field) { return }
+  func menuIsOpen(for app: NSRunningApplication) -> Bool {
+    let menuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
+    guard let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else { return true }
+    return windows.contains {
+      $0[kCGWindowOwnerPID as String] as? pid_t == app.processIdentifier &&
+      $0[kCGWindowLayer as String] as? Int == menuLevel
+    }
+  }
+
+  func finishBufferedInput() {
+    let targetStillFocused = NSWorkspace.shared.frontmostApplication?.processIdentifier == originalPID
+    restoring = false
+    ignoreUntil = Date().addingTimeInterval(0.35)
+    for event in buffered {
+      event.setIntegerValueField(.eventSourceUserData, value: replayTag)
+      if targetStillFocused { event.post(tap: .cghidEventTap) }
+      else { event.postToPid(originalPID) }
+    }
+    buffered.removeAll(keepingCapacity: false)
+  }
+
+  func repairBeforeFirstKey(field expected: AXUIElement, pid: pid_t) {
+    guard enabled, !disabledForSession, !IsSecureEventInputEnabled(), isPinyin(),
+          let (app, field) = focusedTextField(), app.processIdentifier == pid,
+          CFEqual(expected, field), !menuIsOpen(for: app) else {
+      finishBufferedInput()
+      return
+    }
     lastField = field
     let source = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
-    guard TISSelectInputSource(source) == noErr else { return }
-    restoring = true
-    originalPID = app.processIdentifier
-    buffered.removeAll(keepingCapacity: true)
+    guard TISSelectInputSource(source) == noErr else { finishBufferedInput(); return }
     window.makeKeyAndOrderFront(nil)
     if let text = window.contentView?.subviews.first { window.makeFirstResponder(text) }
     NSApp.activate(ignoringOtherApps: true)
@@ -355,18 +389,7 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
         app.activate(options: [])
       }
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-        let targetStillFocused = NSWorkspace.shared.frontmostApplication?.processIdentifier == self.originalPID
-        self.restoring = false
-        self.ignoreUntil = Date().addingTimeInterval(0.35)
-        for event in self.buffered {
-          event.setIntegerValueField(.eventSourceUserData, value: self.replayTag)
-          if targetStillFocused {
-            event.post(tap: .cghidEventTap)
-          } else {
-            event.postToPid(self.originalPID)
-          }
-        }
-        self.buffered.removeAll(keepingCapacity: false)
+        self.finishBufferedInput()
         self.recoveries += 1
 
       }
@@ -375,7 +398,8 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
 
   func installTap() -> Bool {
     if tap != nil { return true }
-    let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue) | (CGEventMask(1) << CGEventType.keyUp.rawValue) | (CGEventMask(1) << CGEventType.flagsChanged.rawValue)
+    let eventTypes: [CGEventType] = [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+    let mask = eventTypes.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
     let callback: CGEventTapCallBack = { _, type, event, context in
       guard let context else { return Unmanaged.passUnretained(event) }
       let owner = Unmanaged<PinyinFocusRecovery>.fromOpaque(context).takeUnretainedValue()
@@ -384,14 +408,43 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
         return Unmanaged.passUnretained(event)
       }
       if event.getIntegerValueField(.eventSourceUserData) == owner.replayTag { return Unmanaged.passUnretained(event) }
-      // Store keys only during the bounded 200 ms focus hand-off. No key text is logged.
+      if type == .rightMouseDown || type == .otherMouseDown {
+        owner.pending?.cancel()
+        owner.preparedField = nil
+        return Unmanaged.passUnretained(event)
+      }
+      if type == .leftMouseDown {
+        owner.pending?.cancel()
+        owner.preparedField = nil
+        // Selection, double-clicks and context-menu actions never move focus.
+        // A later ordinary click may prepare a candidate but still cannot repair it.
+        if event.getIntegerValueField(.mouseEventClickState) == 1 { owner.schedule() }
+        return Unmanaged.passUnretained(event)
+      }
+      // Store keyboard events only during the bounded first-character hand-off.
       if owner.restoring, let copy = event.copy() {
         owner.buffered.append(copy)
         return nil
       }
-      // Never refresh a field after typing has begun in it.
-      if type == .keyDown, !owner.restoring {
+      if type == .keyDown {
+        owner.typingGeneration += 1
         owner.pending?.cancel()
+        let forbidden: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate]
+        let code = event.getIntegerValueField(.keyboardEventKeycode)
+        let letters: Set<Int64> = [0,1,2,3,4,5,6,7,8,9,11,12,13,14,15,16,17,31,32,34,35,37,38,40,45,46]
+        if owner.enabled, !owner.disabledForSession, owner.isPinyin(),
+           event.flags.intersection(forbidden).isEmpty, letters.contains(code),
+           let field = owner.preparedField, let first = event.copy() {
+          let pid = owner.preparedPID
+          owner.preparedField = nil
+          owner.originalPID = pid
+          owner.buffered = [first]
+          owner.restoring = true
+          DispatchQueue.main.async { owner.repairBeforeFirstKey(field: field, pid: pid) }
+          return nil
+        }
+        // Once text starts without a prepared candidate, don't repair mid-composition.
+        if event.flags.intersection(forbidden).isEmpty { owner.preparedField = nil }
       }
       return Unmanaged.passUnretained(event)
     }
@@ -417,6 +470,7 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
     tap = nil
     tapSource = nil
     lastField = nil
+    preparedField = nil
     started = false
   }
 }

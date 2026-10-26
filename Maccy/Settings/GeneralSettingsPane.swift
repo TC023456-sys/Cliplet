@@ -105,7 +105,7 @@ struct GeneralSettingsPane: View {
       Settings.Section(title: "远程输入") {
         Toggle("拼音输入自动修复", isOn: $pinyinRecovery.enabled)
         Text(pinyinRecovery.statusText).font(.caption).foregroundStyle(.secondary)
-        Text("进入文字输入框时自动恢复拼音连接，无需快捷键。").font(.caption).foregroundStyle(.secondary)
+        Text("输入首个拼音字母时自动恢复连接，不因右键或双击切换焦点。").font(.caption).foregroundStyle(.secondary)
         Button("重新检查权限") { pinyinRecovery.start() }
       }
 
