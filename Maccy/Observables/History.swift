@@ -103,6 +103,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
   @MainActor
   func load() async throws {
+    try Storage.shared.removeOrphanedContentsOnce()
     let descriptor = FetchDescriptor<HistoryItem>()
     let results = try Storage.shared.context.fetch(descriptor)
     all = sorter.sort(results).map { HistoryItemDecorator($0) }
@@ -146,7 +147,15 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     var removedItemIndex: Int?
     if let existingHistoryItem = findSimilarItem(item) {
       if isModified(item) == nil {
-        item.contents = existingHistoryItem.contents
+        // The incoming item is already inserted/saved above. Replacing its
+        // contents without deleting the discarded children leaves orphan BLOBs.
+        let retained = existingHistoryItem.contents
+        let discarded = item.contents.filter { content in
+          !retained.contains(where: { $0 === content })
+        }
+        existingHistoryItem.contents = []
+        item.contents = retained
+        discarded.forEach { Storage.shared.context.delete($0) }
       }
       item.firstCopiedAt = existingHistoryItem.firstCopiedAt
       item.numberOfCopies += existingHistoryItem.numberOfCopies
@@ -160,6 +169,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       if let removedItemIndex {
         cleanup(all[removedItemIndex])
       }
+      sessionLog.removeValues { $0 === existingHistoryItem }
       Storage.shared.context.delete(existingHistoryItem)
       if let removedItemIndex {
         all.remove(at: removedItemIndex)
@@ -197,7 +207,20 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       AppState.shared.popup.needsResize = true
     }
 
+    Storage.shared.context.processPendingChanges()
+    try? Storage.shared.context.save()
     return itemDecorator
+  }
+
+  @MainActor
+  func releaseImageCaches() {
+    for item in all { item.cleanupImages() }
+  }
+
+  @MainActor
+  func prepareImagesForPresentation() {
+    // Prime a small initial viewport; additional rows load as they appear.
+    for item in items.prefix(15) { item.ensureThumbnailImage() }
   }
 
   @MainActor
@@ -257,6 +280,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       items = all
 
       try? Storage.shared.context.delete(model: HistoryItem.self)
+      try? Storage.shared.context.delete(model: HistoryItemContent.self)
       Storage.shared.context.processPendingChanges()
       try? Storage.shared.context.save()
     }
@@ -291,6 +315,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
   @MainActor
   private func cleanup(_ item: HistoryItemDecorator) {
+    item.item.cancelTextRecognition()
     item.cleanupImages()
   }
 
