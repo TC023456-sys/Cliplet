@@ -215,6 +215,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     isPresented = false
     statusBarButton?.isHighlighted = false
     onClose()
+    PinyinFocusRecovery.shared.attach()
   }
 
   // Allow text inputs inside the panel can receive focus
