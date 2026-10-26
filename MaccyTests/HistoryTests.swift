@@ -1,5 +1,6 @@
 import XCTest
 import Defaults
+import SwiftData
 @testable import Maccy
 
 @MainActor
@@ -26,6 +27,36 @@ class HistoryTests: XCTestCase {
 
   func testDefaultIsEmpty() {
     XCTAssertEqual(history.items, [])
+  }
+
+  func testRepeatedDuplicateLeavesNoOrphanedContents() throws {
+    for _ in 0..<30 { history.add(historyItem("same copied text")) }
+    try Storage.shared.context.save()
+    let rows = try Storage.shared.context.fetch(FetchDescriptor<HistoryItem>())
+    let contents = try Storage.shared.context.fetch(FetchDescriptor<HistoryItemContent>())
+    XCTAssertEqual(rows.count, 1)
+    XCTAssertFalse(contents.isEmpty)
+    XCTAssertTrue(contents.allSatisfy { $0.item != nil })
+    XCTAssertEqual(contents.count, rows[0].contents.count)
+  }
+
+  func testOrphanMaintenancePreservesLiveHistoryAndPins() throws {
+    let storage = Storage()
+    let live = HistoryItem(contents: [HistoryItemContent(type: "public.utf8-plain-text", value: Data("keep".utf8))])
+    live.pin = "k"
+    let orphan = HistoryItemContent(type: "public.utf8-plain-text", value: Data("discard detached payload".utf8))
+    storage.context.insert(live)
+    storage.context.insert(orphan)
+    try storage.context.save()
+    try storage.removeOrphanedContentsOnce()
+    let rows = try storage.context.fetch(FetchDescriptor<HistoryItem>())
+    let contents = try storage.context.fetch(FetchDescriptor<HistoryItemContent>())
+    XCTAssertEqual(rows.count, 1)
+    XCTAssertEqual(rows.first?.pin, "k")
+    XCTAssertEqual(contents.count, 1)
+    XCTAssertEqual(contents.first?.value, Data("keep".utf8))
+    try storage.removeOrphanedContentsOnce()
+    XCTAssertEqual(try storage.context.fetchCount(FetchDescriptor<HistoryItem>()), 1)
   }
 
   func testAdding() {
