@@ -40,6 +40,43 @@ class HistoryItemDecoratorTests: XCTestCase {
     XCTAssertNil(itemDecorator.thumbnailImage)
   }
 
+  func testObservationDoesNotRetainDecorator() {
+    weak var released: HistoryItemDecorator?
+    autoreleasepool {
+      let model = HistoryItem()
+      model.title = "retention regression"
+      let decorator = HistoryItemDecorator(model)
+      released = decorator
+    }
+    XCTAssertNil(released, "Observation callbacks must not retain their decorator/model cycle")
+  }
+
+  func testHashRemainsStableWhenDisplayedTextChanges() {
+    let decorator = historyItemDecorator("before")
+    let set: Set<HistoryItemDecorator> = [decorator]
+    let original = decorator.hashValue
+    decorator.title = "after"
+    decorator.attributedTitle = AttributedString("highlight changed")
+    XCTAssertEqual(decorator.hashValue, original)
+    XCTAssertTrue(set.contains(decorator))
+  }
+
+  func testImageTasksCanRestartAfterCacheCleanup() async {
+    let decorator = historyItemDecorator(NSImage(named: "NSApplicationIcon")!)
+    decorator.ensureThumbnailImage()
+    let first = decorator.thumbnailImageGenerationTask
+    await first?.value
+    XCTAssertNotNil(decorator.thumbnailImage)
+    XCTAssertNil(decorator.thumbnailImageGenerationTask)
+    decorator.cleanupImages()
+    XCTAssertNil(decorator.thumbnailImage)
+    XCTAssertNil(decorator.previewImage)
+    decorator.ensureThumbnailImage()
+    let second = decorator.thumbnailImageGenerationTask
+    await second?.value
+    XCTAssertNotNil(decorator.thumbnailImage)
+  }
+
   func testRTF() {
     let rtf = NSAttributedString(string: "foo").rtf(
       from: NSRange(0...2),
