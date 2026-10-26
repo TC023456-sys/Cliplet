@@ -118,6 +118,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationWillTerminate(_ notification: Notification) {
+    PinyinFocusRecovery.shared.stop()
     if Defaults[.clearOnQuit] {
       AppState.shared.history.clear()
     }
@@ -333,7 +334,7 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
   }
 
   func repair() {
-    guard enabled, !disabledForSession, !restoring, Date() >= ignoreUntil, isPinyin(),
+    guard enabled, !disabledForSession, !restoring, !IsSecureEventInputEnabled(), Date() >= ignoreUntil, isPinyin(),
           let (app, field) = focusedTextField() else { return }
     if let lastField, CFEqual(lastField, field) { return }
     lastField = field
@@ -436,7 +437,8 @@ enum ClipletLegacyData {
       let data = try? Data(contentsOf: containerLibrary.appending(path: "Preferences/com.tc023456.Cliplet.plist")),
       let values = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
     else { return }
-    for (key, value) in values where defaults.object(forKey: key) == nil {
+    let existing = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "com.tc023456.Cliplet") ?? [:]
+    for (key, value) in values where existing[key] == nil {
       defaults.set(value, forKey: key)
     }
     defaults.set(true, forKey: marker)
