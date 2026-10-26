@@ -45,13 +45,13 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' package/Cliplet.app/Contents/Info.plist)" = com.tc023456.Cliplet
           test ! -d package/Cliplet.app/Contents/Frameworks/Sparkle.framework
           ! otool -L package/Cliplet.app/Contents/MacOS/Maccy | grep Sparkle
-          ditto -c -k --sequesterRsrc --keepParent package/Cliplet.app dist/Cliplet-1.0.6.zip
-          git archive --format=zip HEAD -o dist/Cliplet-1.0.6-Source.zip
+          ditto -c -k --sequesterRsrc --keepParent package/Cliplet.app dist/Cliplet-1.0.7.zip
+          git archive --format=zip HEAD -o dist/Cliplet-1.0.7-Source.zip
           cp LICENSE dist/MIT-LICENSE.txt
           shasum -a 256 dist/*.zip > dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Cliplet-1.0.6
+          name: Cliplet-1.0.7
           path: dist/*
       - uses: actions/upload-artifact@v4
         if: failure()

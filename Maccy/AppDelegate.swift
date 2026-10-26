@@ -274,6 +274,13 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
     attach()
   }
 
+  var clipboardPanelIsOpen: Bool { AppState.shared.appDelegate?.panel?.isPresented == true }
+
+  func suspendForClipboardPanel() {
+    pending?.cancel()
+    preparedField = nil
+  }
+
   func isPinyin() -> Bool {
     let source = TISCopyCurrentKeyboardInputSource().takeRetainedValue()
     guard let p = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { return false }
@@ -331,7 +338,7 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
 
   // Focus changes prepare a candidate only. They never activate a window.
   func schedule() {
-    guard enabled, !disabledForSession, !restoring, Date() >= ignoreUntil, tap != nil, isPinyin() else { return }
+    guard enabled, !disabledForSession, !restoring, !clipboardPanelIsOpen, Date() >= ignoreUntil, tap != nil, isPinyin() else { return }
     pending?.cancel()
     preparedField = nil
     let generation = typingGeneration
@@ -356,7 +363,7 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
   }
 
   func finishBufferedInput() {
-    let targetStillFocused = NSWorkspace.shared.frontmostApplication?.processIdentifier == originalPID
+    let targetStillFocused = !clipboardPanelIsOpen && NSWorkspace.shared.frontmostApplication?.processIdentifier == originalPID
     restoring = false
     ignoreUntil = Date().addingTimeInterval(0.35)
     for event in buffered {
@@ -368,7 +375,7 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
   }
 
   func repairBeforeFirstKey(field expected: AXUIElement, pid: pid_t) {
-    guard enabled, !disabledForSession, !IsSecureEventInputEnabled(), isPinyin(),
+    guard enabled, !disabledForSession, !clipboardPanelIsOpen, !IsSecureEventInputEnabled(), isPinyin(),
           let (app, field) = focusedTextField(), app.processIdentifier == pid,
           CFEqual(expected, field), !menuIsOpen(for: app) else {
       finishBufferedInput()
@@ -383,6 +390,7 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
       guard let self else { return }
       self.window.orderOut(nil)
+      if self.clipboardPanelIsOpen { self.finishBufferedInput(); return }
       // Respect a deliberate switch to a different application during recovery.
       let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
       if frontPID == ProcessInfo.processInfo.processIdentifier || frontPID == app.processIdentifier {
@@ -419,6 +427,10 @@ final class PinyinFocusRecovery: NSObject, ObservableObject {
         // Selection, double-clicks and context-menu actions never move focus.
         // A later ordinary click may prepare a candidate but still cannot repair it.
         if event.getIntegerValueField(.mouseEventClickState) == 1 { owner.schedule() }
+        return Unmanaged.passUnretained(event)
+      }
+      if owner.clipboardPanelIsOpen && !owner.restoring {
+        owner.suspendForClipboardPanel()
         return Unmanaged.passUnretained(event)
       }
       // Store keyboard events only during the bounded first-character hand-off.

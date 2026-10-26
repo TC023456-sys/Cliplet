@@ -74,6 +74,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   func open(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition]) {
+    PinyinFocusRecovery.shared.suspendForClipboardPanel()
     let size = Defaults[.windowSize]
     let miniumHeight: CGFloat = AppState.shared.popup.minimumHeight
     let finalWidth = min(frame.width, size.width)
