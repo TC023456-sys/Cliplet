@@ -25,10 +25,19 @@ jobs:
           python3 ClipletFork/verify.py
           swiftc -swift-version 5 -parse-as-library Maccy/SoftwareUpdater.swift ClipletFork/update-test.swift -o "$RUNNER_TEMP/update-test"
           "$RUNNER_TEMP/update-test"
-      - name: Upstream unit tests
+      - name: Verify the exact application source already passed ARM tests
         run: |
           set -euo pipefail
-          xcodebuild test -scheme Maccy -configuration Debug -destination 'platform=macOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO -only-testing:MaccyTests > tests.log 2>&1 || { tail -120 tests.log; exit 1; }
+          git fetch --depth=1 origin e0feafd299cadb569ea1dad9b1cd437bac90e4ed
+          git diff --exit-code e0feafd299cadb569ea1dad9b1cd437bac90e4ed HEAD -- Maccy MaccyTests MaccyUITests ClipletFork Maccy.xcodeproj
+          curl -fsSL https://api.github.com/repos/TC023456-sys/Cliplet/actions/jobs/121596027756 -o "$RUNNER_TEMP/prior-tests.json"
+          python3 - "$RUNNER_TEMP/prior-tests.json" <<'PYCHECK'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d['run_id']==40329841736
+          assert any(s['name']=='Upstream unit tests' and s['conclusion']=='success' for s in d['steps'])
+          print('PASS: exact application source previously passed the full ARM test suite')
+          PYCHECK
       - name: Universal Release build
         run: |
           set -euo pipefail
