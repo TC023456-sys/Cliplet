@@ -92,7 +92,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       contentRect: NSRect(origin: .zero, size: Defaults[.windowSize]),
       identifier: Bundle.main.bundleIdentifier ?? "org.p0deje.Maccy",
       statusBarButton: statusItem.button,
-      onClose: { AppState.shared.popup.reset() }
+      onClose: {
+        AppState.shared.popup.reset()
+        AppState.shared.history.releaseImageCaches()
+      }
     ) {
       ContentView()
     }
