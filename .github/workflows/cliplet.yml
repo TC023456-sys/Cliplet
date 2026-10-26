@@ -1,7 +1,7 @@
 name: Build Cliplet
 on:
   push:
-    branches: [main, fix/plain-text-paste]
+    branches: [main, fix/plain-text-paste, fix/memory-retention]
   workflow_dispatch:
 permissions:
   contents: read
@@ -45,13 +45,13 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' package/Cliplet.app/Contents/Info.plist)" = com.tc023456.Cliplet
           test ! -d package/Cliplet.app/Contents/Frameworks/Sparkle.framework
           ! otool -L package/Cliplet.app/Contents/MacOS/Maccy | grep Sparkle
-          ditto -c -k --sequesterRsrc --keepParent package/Cliplet.app dist/Cliplet-1.0.3.zip
-          git archive --format=zip HEAD -o dist/Cliplet-1.0.3-Source.zip
+          ditto -c -k --sequesterRsrc --keepParent package/Cliplet.app dist/Cliplet-1.0.4.zip
+          git archive --format=zip HEAD -o dist/Cliplet-1.0.4-Source.zip
           cp LICENSE dist/MIT-LICENSE.txt
           shasum -a 256 dist/*.zip > dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Cliplet-1.0.3
+          name: Cliplet-1.0.4
           path: dist/*
       - uses: actions/upload-artifact@v4
         if: failure()
