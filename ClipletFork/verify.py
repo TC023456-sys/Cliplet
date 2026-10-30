@@ -5,6 +5,7 @@ import json
 root = Path(__file__).resolve().parents[1]
 app = root / 'Maccy'
 info = plistlib.loads((app / 'Info.plist').read_bytes())
+assert not plistlib.loads((app / 'Maccy.entitlements').read_bytes()).get('com.apple.security.app-sandbox', False)
 assert info['CFBundleName'] == info['CFBundleDisplayName'] == 'Cliplet'
 assert not any(key.startswith('SU') for key in info)
 assert 'Alexey Rodionov' in info['NSHumanReadableCopyright']
