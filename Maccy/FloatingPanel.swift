@@ -8,11 +8,10 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   var statusBarButton: NSStatusBarButton?
   let onClose: () -> Void
   private var pasteSelection: PasteSelection?
-  private var presentationID = UUID()
 
-  func restoreSelectionForPaste() -> Bool {
+  func takeSelectionForPaste() -> PasteSelection? {
     defer { pasteSelection = nil }
-    return pasteSelection?.restore() ?? true
+    return pasteSelection
   }
 
   override var isMovable: Bool {
@@ -81,7 +80,6 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   func open(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition]) {
-    presentationID = UUID()
     pasteSelection = PasteSelection.capture()
     let size = Defaults[.windowSize]
     let miniumHeight: CGFloat = AppState.shared.popup.minimumHeight
@@ -223,13 +221,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     isPresented = false
     statusBarButton?.isHighlighted = false
     onClose()
-    // Selection actions close the panel and paste synchronously. Keep the
-    // bookmark for that call only; cancellation drops it on the next run loop.
-    let closedPresentationID = presentationID
-    DispatchQueue.main.async { [weak self] in
-      guard let self, self.presentationID == closedPresentationID else { return }
-      self.pasteSelection = nil
-    }
+    pasteSelection = nil
   }
 
   // Allow text inputs inside the panel can receive focus
