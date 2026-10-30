@@ -1,5 +1,6 @@
 import XCTest
 import Defaults
+import SwiftUI
 @testable import Maccy
 
 // swiftlint:disable type_body_length
@@ -348,3 +349,47 @@ class ClipboardTests: XCTestCase {
   }
 }
 // swiftlint:enable type_body_length
+
+@MainActor
+final class SelectionSafePanelTests: XCTestCase {
+  func testMousePanelDoesNotTakeSourceKeyWindowOrCollapseSelection() {
+    let source = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 400, height: 200),
+                          styleMask: [.titled], backing: .buffered, defer: false)
+    source.isReleasedWhenClosed = false
+    let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    editor.string = "before selected after"
+    source.contentView = editor
+    NSApp.activate(ignoringOtherApps: true)
+    source.makeKeyAndOrderFront(nil)
+    source.makeFirstResponder(editor)
+    editor.setSelectedRange(NSRange(location: 7, length: 8))
+    XCTAssertTrue(source.isKeyWindow)
+    let panel = FloatingPanel(contentRect: NSRect(x: 550, y: 100, width: 350, height: 200),
+                              onClose: {}) { SwiftUI.Text("history fixture") }
+    defer { panel.close(); source.close() }
+    panel.open(height: 200, preserveSourceFocus: true)
+    XCTAssertTrue(panel.isVisible)
+    XCTAssertFalse(panel.canBecomeKey)
+    XCTAssertFalse(panel.isKeyWindow)
+    XCTAssertTrue(source.isKeyWindow)
+    XCTAssertEqual(editor.selectedRange(), NSRange(location: 7, length: 8))
+    // SwiftUI's search focus must not be able to force the panel key on opening.
+    panel.makeKey()
+    XCTAssertFalse(panel.isKeyWindow)
+    XCTAssertTrue(source.isKeyWindow)
+    panel.close()
+    XCTAssertEqual(editor.selectedRange(), NSRange(location: 7, length: 8))
+  }
+
+  func testKeyboardInputRequiresExplicitOptIn() {
+    let panel = FloatingPanel(contentRect: NSRect(x: 100, y: 100, width: 350, height: 200),
+                              onClose: {}) { SwiftUI.Text("search fixture") }
+    defer { panel.close() }
+    panel.open(height: 200, preserveSourceFocus: true)
+    XCTAssertFalse(panel.canBecomeKey)
+    panel.beginKeyboardInput()
+    XCTAssertFalse(panel.preservesSourceFocus)
+    XCTAssertTrue(panel.canBecomeKey)
+    XCTAssertTrue(panel.isKeyWindow)
+  }
+}
