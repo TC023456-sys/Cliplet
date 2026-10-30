@@ -1,5 +1,16 @@
 import Defaults
+import KeyboardShortcuts
+import OSLog
 import SwiftUI
+
+private final class SelectionHostingView<Content: View>: NSHostingView<Content> {
+  override var needsPanelToBecomeKey: Bool { false }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+private extension KeyboardShortcuts.Name {
+  static let selectionSafeClose = Self("selectionSafeClose", default: .init(.escape))
+}
 
 // An NSPanel subclass that implements floating panel traits.
 // https://stackoverflow.com/questions/46023769/how-to-show-a-window-without-stealing-focus-on-macos
@@ -8,6 +19,40 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   var statusBarButton: NSStatusBarButton?
   let onClose: () -> Void
   private var pasteSelection: PasteSelection?
+  private(set) var preservesSourceFocus = false
+  private var outsideClickMonitor: Any?
+  private var ownsEscapeShortcut = false
+
+  func beginKeyboardInput() {
+    guard preservesSourceFocus else { return }
+    preservesSourceFocus = false
+    stopSelectionSafeMonitoring()
+    makeKey()
+  }
+
+  private func startSelectionSafeMonitoring() {
+    KeyboardShortcuts.onKeyDown(for: .selectionSafeClose) { [weak self] in
+      guard let self, self.preservesSourceFocus else { return }
+      self.close()
+    }
+    KeyboardShortcuts.enable(.selectionSafeClose)
+    ownsEscapeShortcut = true
+    outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+      guard let self, !self.frame.contains(NSEvent.mouseLocation) else { return }
+      self.close()
+    }
+  }
+
+  private func stopSelectionSafeMonitoring() {
+    if let outsideClickMonitor {
+      NSEvent.removeMonitor(outsideClickMonitor)
+      self.outsideClickMonitor = nil
+    }
+    if ownsEscapeShortcut {
+      KeyboardShortcuts.disable(.selectionSafeClose)
+      ownsEscapeShortcut = false
+    }
+  }
 
   func takeSelectionForPaste() -> PasteSelection? {
     defer { pasteSelection = nil }
@@ -43,6 +88,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
 
     animationBehavior = .none
     isFloatingPanel = true
+    becomesKeyOnlyIfNeeded = true
     // Chrome autofill uses window layer 999; screenSaver (1000) sits just above it
     // while still covering status items / Spotlight. See #1403.
     level = .screenSaver
@@ -59,7 +105,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     standardWindowButton(.miniaturizeButton)?.isHidden = true
     standardWindowButton(.zoomButton)?.isHidden = true
 
-    contentView = NSHostingView(
+    contentView = SelectionHostingView(
       rootView: view()
         // The safe area is ignored because the title bar still interferes with the geometry
         .ignoresSafeArea()
@@ -79,8 +125,14 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     }
   }
 
-  func open(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition]) {
-    pasteSelection = PasteSelection.capture()
+  func open(height: CGFloat, at popupPosition: PopupPosition = Defaults[.popupPosition],
+            preserveSourceFocus: Bool? = nil) {
+    let sourceID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    preservesSourceFocus = preserveSourceFocus ??
+      ["com.tencent.xinWeChat", "com.tencent.WeChat"].contains(sourceID ?? "")
+    Logger(subsystem: "com.tc023456.Cliplet", category: "Selection")
+      .notice("panel: preserves-source-focus=\(self.preservesSourceFocus, privacy: .public)")
+    pasteSelection = preservesSourceFocus ? nil : PasteSelection.capture()
     let size = Defaults[.windowSize]
     let miniumHeight: CGFloat = AppState.shared.popup.minimumHeight
     let finalWidth = min(frame.width, size.width)
@@ -88,7 +140,11 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     setContentSize(NSSize(width: finalWidth, height: finalHeight))
     setFrameOrigin(popupPosition.origin(size: frame.size, statusBarButton: statusBarButton))
     orderFrontRegardless()
-    makeKey()
+    if preservesSourceFocus {
+      startSelectionSafeMonitoring()
+    } else {
+      makeKey()
+    }
     isPresented = true
     AppState.shared.history.prepareImagesForPresentation()
 
@@ -216,16 +272,18 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   }
 
   override func close() {
+    stopSelectionSafeMonitoring()
     super.close()
     AppState.shared.preview.state = .closed
     isPresented = false
     statusBarButton?.isHighlighted = false
     onClose()
     pasteSelection = nil
+    preservesSourceFocus = false
   }
 
   // Allow text inputs inside the panel can receive focus
   override var canBecomeKey: Bool {
-    return true
+    return !preservesSourceFocus
   }
 }
