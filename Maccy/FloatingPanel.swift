@@ -10,6 +10,9 @@ private final class SelectionHostingView<Content: View>: NSHostingView<Content> 
 
 private extension KeyboardShortcuts.Name {
   static let selectionSafeClose = Self("selectionSafeClose", default: .init(.escape))
+  static let selectionSafeAccept = Self("selectionSafeAccept", default: .init(.return))
+  static let selectionSafeNext = Self("selectionSafeNext", default: .init(.downArrow))
+  static let selectionSafePrevious = Self("selectionSafePrevious", default: .init(.upArrow))
 }
 
 // An NSPanel subclass that implements floating panel traits.
@@ -21,7 +24,7 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
   private var pasteSelection: PasteSelection?
   private(set) var preservesSourceFocus = false
   private var outsideClickMonitor: Any?
-  private var ownsEscapeShortcut = false
+  private var ownsSelectionShortcuts = false
 
   func beginKeyboardInput() {
     guard preservesSourceFocus else { return }
@@ -35,8 +38,22 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
       guard let self, self.preservesSourceFocus else { return }
       self.close()
     }
-    KeyboardShortcuts.enable(.selectionSafeClose)
-    ownsEscapeShortcut = true
+    KeyboardShortcuts.onKeyDown(for: .selectionSafeAccept) { [weak self] in
+      guard self?.preservesSourceFocus == true else { return }
+      AppState.shared.select(flags: [])
+    }
+    KeyboardShortcuts.onKeyDown(for: .selectionSafeNext) { [weak self] in
+      guard self?.preservesSourceFocus == true else { return }
+      AppState.shared.navigator.highlightNext()
+    }
+    KeyboardShortcuts.onKeyDown(for: .selectionSafePrevious) { [weak self] in
+      guard self?.preservesSourceFocus == true else { return }
+      AppState.shared.navigator.highlightPrevious()
+    }
+    for name in [KeyboardShortcuts.Name.selectionSafeClose, .selectionSafeAccept, .selectionSafeNext, .selectionSafePrevious] {
+      KeyboardShortcuts.enable(name)
+    }
+    ownsSelectionShortcuts = true
     outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
       guard let self, !self.frame.contains(NSEvent.mouseLocation) else { return }
       self.close()
@@ -48,9 +65,11 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
       NSEvent.removeMonitor(outsideClickMonitor)
       self.outsideClickMonitor = nil
     }
-    if ownsEscapeShortcut {
-      KeyboardShortcuts.disable(.selectionSafeClose)
-      ownsEscapeShortcut = false
+    if ownsSelectionShortcuts {
+      for name in [KeyboardShortcuts.Name.selectionSafeClose, .selectionSafeAccept, .selectionSafeNext, .selectionSafePrevious] {
+        KeyboardShortcuts.disable(name)
+      }
+      ownsSelectionShortcuts = false
     }
   }
 
