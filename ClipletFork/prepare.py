@@ -24,6 +24,7 @@ info_path.write_bytes(plistlib.dumps(info))
 entitlement_path = app / 'Maccy.entitlements'
 entitlements = plistlib.loads(entitlement_path.read_bytes())
 entitlements.pop('com.apple.security.temporary-exception.mach-lookup.global-name', None)
+entitlements.pop('com.apple.security.app-sandbox', None)
 entitlements['com.apple.security.network.client'] = True
 entitlement_path.write_bytes(plistlib.dumps(entitlements))
 
@@ -50,8 +51,8 @@ project = clean(project)
 for obj in project['objects'].values():
     settings = obj.get('buildSettings', {})
     if settings.get('PRODUCT_BUNDLE_IDENTIFIER') == identity:
-        settings['MARKETING_VERSION'] = '1.0.5'
-        settings['CURRENT_PROJECT_VERSION'] = '10005'
+        settings['MARKETING_VERSION'] = '1.0.6'
+        settings['CURRENT_PROJECT_VERSION'] = '10006'
         settings['DEVELOPMENT_TEAM'] = ''
 project_path.write_bytes(plistlib.dumps(project))
 resolved = root / 'Maccy.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved'
