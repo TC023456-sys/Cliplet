@@ -28,7 +28,7 @@ class Storage {
     return ByteCountFormatter().string(fromByteCount: size)
   }
 
-  private let url = URL.applicationSupportDirectory.appending(path: "Maccy/Storage.sqlite")
+  private let url = ClipletData.databaseURL()
 
   init() {
     var config = ModelConfiguration(url: url)
