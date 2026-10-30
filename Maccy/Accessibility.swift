@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 
 struct Accessibility {
   private static var allowed: Bool { AXIsProcessTrustedWithOptions(nil) }
@@ -23,6 +24,7 @@ struct Accessibility {
 // A short-lived selection bookmark, never clipboard text or a synthetic click.
 // Only restore in the same focused control; never move focus to another app.
 final class PasteSelection {
+  private static let logger = Logger(subsystem: "com.tc023456.Cliplet", category: "Selection")
   private let element: AXUIElement
   private let application: AXUIElement
   private let processID: pid_t
@@ -37,15 +39,32 @@ final class PasteSelection {
   }
 
   static func capture() -> PasteSelection? {
-    guard AXIsProcessTrusted(),
-          let app = NSWorkspace.shared.frontmostApplication,
-          app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+    guard AXIsProcessTrusted() else {
+      logger.notice("capture: accessibility-not-trusted")
+      return nil
+    }
+    guard let app = NSWorkspace.shared.frontmostApplication,
+          app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+      logger.notice("capture: no-external-app")
+      return nil
+    }
     let application = AXUIElementCreateApplication(app.processIdentifier)
-    guard let focused = focusedElement(in: application),
-          let range = selectedRange(in: focused), range.length > 0 else { return nil }
-    var settable = DarwinBoolean(false)
-    guard AXUIElementIsAttributeSettable(focused, kAXSelectedTextRangeAttribute as CFString, &settable) == .success,
-          settable.boolValue else { return nil }
+    AXUIElementSetMessagingTimeout(application, 0.3)
+    guard let focused = focusedElement(in: application) else {
+      logger.notice("capture: focused-element-unavailable")
+      return nil
+    }
+    guard let range = selectedRange(in: focused) else {
+      logger.notice("capture: selection-range-unavailable")
+      return nil
+    }
+    guard range.length > 0 else {
+      logger.notice("capture: empty-selection")
+      return nil
+    }
+    // Custom text controls may not implement AXIsAttributeSettable accurately.
+    // Save the readable range and verify the actual write when pasting instead.
+    logger.notice("capture: saved")
     return PasteSelection(element: focused, application: application,
                           processID: app.processIdentifier, range: range)
   }
@@ -56,13 +75,24 @@ final class PasteSelection {
           ProcessInfo.processInfo.systemUptime - capturedAt < 120,
           let focused = Self.focusedElement(in: application), CFEqual(focused, element),
           let current = Self.selectedRange(in: element),
-          Self.canRestore(original: range, current: current) else { return false }
-    if current.location == range.location && current.length == range.length { return true }
+          Self.canRestore(original: range, current: current) else {
+      Self.logger.notice("restore: target-or-selection-changed")
+      return false
+    }
+    if current.location == range.location && current.length == range.length {
+      Self.logger.notice("restore: selection-already-intact")
+      return true
+    }
     var restoredRange = range
     guard let value = AXValueCreate(.cfRange, &restoredRange),
           AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success,
-          let result = Self.selectedRange(in: element) else { return false }
-    return result.location == range.location && result.length == range.length
+          let result = Self.selectedRange(in: element) else {
+      Self.logger.notice("restore: write-failed")
+      return false
+    }
+    let restored = result.location == range.location && result.length == range.length
+    Self.logger.notice("restore: verified=\(restored, privacy: .public)")
+    return restored
   }
 
   static func canRestore(original: CFRange, current: CFRange) -> Bool {
@@ -84,8 +114,16 @@ final class PasteSelection {
 
   private static func selectedRange(in element: AXUIElement) -> CFRange? {
     var value: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
-          let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+    if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
+       let range = decodeRange(value) { return range }
+    value = nil
+    guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangesAttribute as CFString, &value) == .success,
+          let ranges = value as? [AXValue], ranges.count == 1 else { return nil }
+    return decodeRange(ranges[0])
+  }
+
+  static func decodeRange(_ value: CFTypeRef?) -> CFRange? {
+    guard let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
     let axValue = value as! AXValue
     guard AXValueGetType(axValue) == .cfRange else { return nil }
     var range = CFRange()
