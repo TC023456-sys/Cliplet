@@ -353,8 +353,10 @@ class ClipboardTests: XCTestCase {
 @MainActor
 final class SelectionSafePanelTests: XCTestCase {
   func testMousePanelDoesNotTakeSourceKeyWindowOrCollapseSelection() {
-    let source = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 400, height: 200),
-                          styleMask: [.titled], backing: .buffered, defer: false)
+    // The test host is an accessory app. A nonactivating source text panel
+    // can own keyboard focus even while the runner itself is not frontmost.
+    let source = NSPanel(contentRect: NSRect(x: 100, y: 100, width: 400, height: 200),
+                         styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
     source.isReleasedWhenClosed = false
     let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
     editor.string = "before selected after"
