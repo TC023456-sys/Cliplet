@@ -110,9 +110,9 @@ class Clipboard {
   }
 
   // Based on https://github.com/Clipy/Clipy/blob/develop/Clipy/Sources/Services/PasteService.swift.
-  func paste() {
+  func paste(selection: PasteSelection? = nil) {
     guard Accessibility.check() else { return }
-    guard AppState.shared.appDelegate?.panel.restoreSelectionForPaste() ?? true else {
+    guard selection?.restore() ?? true else {
       NSSound.beep()
       return
     }
