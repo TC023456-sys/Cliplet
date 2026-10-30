@@ -1,7 +1,7 @@
 name: Build Cliplet
 on:
   push:
-    branches: [main, fix/plain-text-paste, fix/memory-retention, fix/selection-preservation]
+    branches: [main, fix/plain-text-paste, fix/memory-retention, fix/selection-preservation, fix/selection-desktop]
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,6 +23,8 @@ jobs:
         run: |
           python3 ClipletFork/prepare.py
           python3 ClipletFork/verify.py
+          swiftc -swift-version 5 -D CLIPLET_DATA_TESTS -parse-as-library Maccy/MaccyApp.swift ClipletFork/data-test.swift -o "$RUNNER_TEMP/data-test"
+          "$RUNNER_TEMP/data-test"
           swiftc -swift-version 5 -module-name ClipletSelectionCheck -parse-as-library Maccy/Accessibility.swift ClipletFork/selection-test.swift -o "$RUNNER_TEMP/selection-test"
           "$RUNNER_TEMP/selection-test"
           swiftc -swift-version 5 -parse-as-library Maccy/SoftwareUpdater.swift ClipletFork/update-test.swift -o "$RUNNER_TEMP/update-test"
@@ -47,13 +49,13 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' package/Cliplet.app/Contents/Info.plist)" = com.tc023456.Cliplet
           test ! -d package/Cliplet.app/Contents/Frameworks/Sparkle.framework
           ! otool -L package/Cliplet.app/Contents/MacOS/Maccy | grep Sparkle
-          ditto -c -k --sequesterRsrc --keepParent package/Cliplet.app dist/Cliplet-1.0.5.zip
-          git archive --format=zip HEAD -o dist/Cliplet-1.0.5-Source.zip
+          ditto -c -k --sequesterRsrc --keepParent package/Cliplet.app dist/Cliplet-1.0.6.zip
+          git archive --format=zip HEAD -o dist/Cliplet-1.0.6-Source.zip
           cp LICENSE dist/MIT-LICENSE.txt
           shasum -a 256 dist/*.zip > dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Cliplet-1.0.5
+          name: Cliplet-1.0.6
           path: dist/*
       - uses: actions/upload-artifact@v4
         if: failure()
