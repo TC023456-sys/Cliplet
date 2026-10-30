@@ -325,11 +325,14 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       return
     }
 
+    // Own the bookmark across window-close callbacks and pasteboard updates.
+    let selection = AppState.shared.appDelegate?.panel.takeSelectionForPaste()
+
     if modifierFlags.isEmpty {
       AppState.shared.popup.close()
       Clipboard.shared.copy(item.item, removeFormatting: Defaults[.removeFormattingByDefault])
       if Defaults[.pasteByDefault] {
-        Clipboard.shared.paste()
+        Clipboard.shared.paste(selection: selection)
       }
     } else {
       switch HistoryItemAction(modifierFlags) {
@@ -339,11 +342,11 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       case .paste:
         AppState.shared.popup.close()
         Clipboard.shared.copy(item.item)
-        Clipboard.shared.paste()
+        Clipboard.shared.paste(selection: selection)
       case .pasteWithoutFormatting:
         AppState.shared.popup.close()
         Clipboard.shared.copy(item.item, removeFormatting: true)
-        Clipboard.shared.paste()
+        Clipboard.shared.paste(selection: selection)
       case .unknown:
         return
       }
