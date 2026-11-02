@@ -136,8 +136,10 @@ class ClipboardTests: XCTestCase {
     XCTAssertFalse(Defaults[.ignoreOnlyNextEvent])
   }
 
-  func testIgnoreApplication() {
-    Defaults[.ignoredApps] = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
+  func testIgnoreApplication() throws {
+    // Clipboard reads the live frontmost app. Hosted runners do not guarantee Finder or Xcode.
+    let sourceBundle = try XCTUnwrap(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+    Defaults[.ignoredApps] = [sourceBundle]
 
     let hookExpectation = expectation(description: "Hook is called")
     hookExpectation.isInverted = true
@@ -148,11 +150,13 @@ class ClipboardTests: XCTestCase {
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("bar", forType: .string)
     waitForExpectations(timeout: 2)
+    XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.bundleIdentifier, sourceBundle)
   }
 
-  func testIgnoreAllApplicationsExcept() {
+  func testIgnoreAllApplicationsExcept() throws {
+    let sourceBundle = try XCTUnwrap(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
     Defaults[.ignoreAllAppsExceptListed] = true
-    Defaults[.ignoredApps] = ["com.apple.dt.Xcode", "com.apple.finder"] // Finder is on Bitrise
+    Defaults[.ignoredApps] = [sourceBundle]
 
     let hookExpectation = expectation(description: "Hook is called")
     clipboard.onNewCopy({ (_: HistoryItem) in
@@ -162,6 +166,7 @@ class ClipboardTests: XCTestCase {
     pasteboard.declareTypes([.string], owner: nil)
     pasteboard.setString("bar", forType: .string)
     waitForExpectations(timeout: 2)
+    XCTAssertEqual(NSWorkspace.shared.frontmostApplication?.bundleIdentifier, sourceBundle)
   }
 
   func testIgnoreTransientTypes() {
