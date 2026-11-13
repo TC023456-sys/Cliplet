@@ -1,7 +1,7 @@
 name: Build Cliplet
 on:
   push:
-    branches: [main, fix/plain-text-paste, fix/memory-retention, fix/selection-preservation, fix/selection-desktop, fix/selection-compatibility, fix/wechat-source-focus, fix/remote-hover]
+    branches: [main, fix/plain-text-paste, fix/memory-retention, fix/selection-preservation, fix/selection-desktop, fix/selection-compatibility, fix/wechat-source-focus ]
   workflow_dispatch:
 permissions:
   contents: read
