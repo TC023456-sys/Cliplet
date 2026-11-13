@@ -24,49 +24,78 @@ struct MouseMovedViewModifier: ViewModifier {
     )
   }
 
-  private class Coordinator: NSResponder {
+  // The panel deliberately stays non-key to preserve the source app's selection.
+  // Remote tools can also warp the pointer without delivering mouseMoved events.
+  private class TrackingView: NSView {
     var mouseMoved: (() -> Void)?
+    private var timer: Timer?
+    private var previousLocation: NSPoint?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      timer?.invalidate()
+      timer = nil
+      previousLocation = NSEvent.mouseLocation
+      guard window != nil else { return }
+      let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        self?.checkPointer()
+      }
+      self.timer = timer
+      RunLoop.main.add(timer, forMode: .common)
+    }
+
+    override func updateTrackingAreas() {
+      super.updateTrackingAreas()
+      trackingAreas.forEach { removeTrackingArea($0) }
+      addTrackingArea(NSTrackingArea(
+        rect: .zero,
+        options: [.activeAlways, .inVisibleRect, .mouseMoved],
+        owner: self,
+        userInfo: nil
+      ))
+    }
 
     override func mouseMoved(with event: NSEvent) {
+      checkPointer()
+    }
+
+    private func checkPointer() {
+      let location = NSEvent.mouseLocation
+      defer { previousLocation = location }
+      guard let window, window.isVisible,
+            let previousLocation, location != previousLocation else { return }
+      let local = convert(window.convertPoint(fromScreen: location), from: nil)
+      guard visibleRect.contains(local) else { return }
       mouseMoved?()
     }
+
+    func stopTracking() {
+      timer?.invalidate()
+      timer = nil
+      mouseMoved = nil
+    }
+
+    deinit { timer?.invalidate() }
   }
 
   private struct Representable: NSViewRepresentable {
     let mouseMoved: () -> Void
     let frame: NSRect
 
-    func makeCoordinator() -> Coordinator {
-      let coordinator = Coordinator()
-      coordinator.mouseMoved = mouseMoved
-      return coordinator
-    }
-
-    func makeNSView(context: Context) -> NSView {
-      let view = NSView(frame: frame)
-
-      let options: NSTrackingArea.Options = [
-        .activeInKeyWindow,
-        .inVisibleRect,
-        .mouseMoved
-      ]
-
-      let trackingArea = NSTrackingArea(
-        rect: frame,
-        options: options,
-        owner: context.coordinator,
-        userInfo: nil
-      )
-
-      view.addTrackingArea(trackingArea)
-
+    func makeNSView(context: Context) -> TrackingView {
+      let view = TrackingView(frame: frame)
+      view.mouseMoved = mouseMoved
       return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: TrackingView, context: Context) {
+      nsView.mouseMoved = mouseMoved
+    }
 
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-      nsView.trackingAreas.forEach { nsView.removeTrackingArea($0) }
+    static func dismantleNSView(_ nsView: TrackingView, coordinator: ()) {
+      nsView.stopTracking()
     }
   }
 }
