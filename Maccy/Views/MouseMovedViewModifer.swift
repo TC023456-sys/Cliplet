@@ -69,6 +69,7 @@ struct MouseMovedViewModifier: ViewModifier {
       let local = convert(window.convertPoint(fromScreen: location), from: nil)
       guard visibleRect.contains(local) else { return }
       mouseMoved?()
+      NotificationCenter.default.post(name: pointerMovedNotification, object: window)
     }
 
     func stopTracking() {
@@ -97,5 +98,62 @@ struct MouseMovedViewModifier: ViewModifier {
     static func dismantleNSView(_ nsView: TrackingView, coordinator: ()) {
       nsView.stopTracking()
     }
+  }
+}
+
+private let pointerMovedNotification = Notification.Name("ClipletPointerMoved")
+
+// Hit-test visible rows after an actual pointer displacement, including warps
+// that do not generate SwiftUI hover callbacks. All rows share the panel timer.
+private struct PointerTarget: NSViewRepresentable {
+  let movedInside: () -> Void
+
+  class TargetView: NSView {
+    var movedInside: (() -> Void)?
+    private var observer: NSObjectProtocol?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      stop()
+      guard window != nil else { return }
+      observer = NotificationCenter.default.addObserver(
+        forName: pointerMovedNotification, object: nil, queue: .main
+      ) { [weak self] notification in
+        guard let self, let window = self.window, window.isVisible,
+              (notification.object as? NSWindow) === window else { return }
+        let point = self.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        if self.visibleRect.contains(point) { self.movedInside?() }
+      }
+    }
+
+    func stop() {
+      if let observer { NotificationCenter.default.removeObserver(observer) }
+      observer = nil
+    }
+
+    deinit { stop() }
+  }
+
+  func makeNSView(context: Context) -> TargetView {
+    let view = TargetView()
+    view.movedInside = movedInside
+    return view
+  }
+
+  func updateNSView(_ nsView: TargetView, context: Context) {
+    nsView.movedInside = movedInside
+  }
+
+  static func dismantleNSView(_ nsView: TargetView, coordinator: ()) {
+    nsView.stop()
+    nsView.movedInside = nil
+  }
+}
+
+extension View {
+  func onPointerMoveInside(_ action: @escaping () -> Void) -> some View {
+    background(PointerTarget(movedInside: action))
   }
 }
