@@ -12,6 +12,8 @@ private struct HoverSelectionModifier: ViewModifier {
         } else {
           appState.navigator.hoverSelectionWhileKeyboardNavigating = id
         }
+      } else if appState.navigator.hoverSelectionWhileKeyboardNavigating == id {
+        appState.navigator.hoverSelectionWhileKeyboardNavigating = nil
       }
     }
   }
