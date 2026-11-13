@@ -57,7 +57,7 @@ class NavigationManager { // swiftlint:disable:this type_body_length
       if !isKeyboardNavigating && !isMultiSelectInProgress,
          let hoverSelection = hoverSelectionWhileKeyboardNavigating {
         hoverSelectionWhileKeyboardNavigating = nil
-        select(id: hoverSelection)
+        selectWithoutScrolling(id: hoverSelection)
       }
     }
   }
