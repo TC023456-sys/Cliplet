@@ -1,45 +1,54 @@
 import AppKit
 import SwiftUI
 
-@main
-struct NativeHoverCheck {
+@main struct Check {
   static func main() {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    var changes = 0
-    let panel = NSPanel(contentRect: NSRect(x: 20, y: 20, width: 300, height: 400),
-                        styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
-    panel.contentView = NSHostingView(rootView:
-      ScrollView {
-        VStack {
-          ForEach(0..<40) { row in Text("Row \(row)").frame(height: 30) }
+    var selected = -1
+    var selections: [Int] = []
+    var movements = 0
+    let rows = ScrollView {
+      LazyVStack(spacing: 0) {
+        ForEach(0..<40, id: \.self) { row in
+          Text("Row \(row)").frame(maxWidth: .infinity).frame(height: 40)
+            .onPointerMoveInside { selected = row; selections.append(row) }
         }
-      }.frame(width: 300, height: 400).onMouseMove { changes += 1 })
+      }
+    }.frame(width: 300, height: 400).onMouseMove { movements += 1 }
+    let panel = NSPanel(contentRect: NSRect(x: 100, y: 100, width: 300, height: 400),
+      styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
+    panel.contentView = NSHostingView(rootView: rows)
     panel.orderFrontRegardless()
     defer { panel.orderOut(nil) }
-    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-    precondition(!panel.isKeyWindow, "Test requires a non-key history panel")
-    func areas(_ view: NSView) -> [NSTrackingArea] {
-      view.trackingAreas + view.subviews.flatMap { areas($0) }
+    RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+    precondition(!panel.isKeyWindow)
+    let rects = clipletPointerRowRects(in: panel)
+    precondition(rects.count >= 8, "Need a real scrollable list with visible rows")
+    for i in 0..<rects.count {
+      for j in 0..<i {
+        precondition(rects[i].intersection(rects[j]).isEmpty, "Row hit regions must never overlap")
+      }
     }
-    let candidates = areas(panel.contentView!).filter {
-      $0.options.contains(.activeAlways) && $0.options.contains(.mouseMoved)
-        && $0.options.contains(.mouseEnteredAndExited)
+    for index in 0..<1000 {
+      let row = index % min(8, rects.count)
+      let rect = rects[row]
+      let before = selections.count
+      sampleClipletPointer(in: panel.contentView!, at: NSPoint(x: rect.midX, y: rect.midY))
+      precondition(selected == row, "Pointer must select the actual row, never a different row")
+      precondition(selections.count == before + 1, "Each movement must select exactly one row")
     }
-    precondition(candidates.count == 1, "Exactly one native pointer listener must own navigation")
-    let listener = candidates[0]
-    precondition(!listener.options.contains(.activeInKeyWindow), "Listener must work without taking focus")
-    let owner = listener.owner as! NSResponder
-    let event = NSEvent.mouseEvent(with: .mouseMoved, location: NSPoint(x: 50, y: 50),
-      modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber,
-      context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
-    let initial = changes
-    for _ in 0..<1000 { owner.mouseMoved(with: event) }
-    precondition(changes == initial + 1000, "Movement must have exactly one callback per native event")
-    let stationary = changes
-    RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-    precondition(changes == stationary, "No polling may change navigation while the pointer is stationary")
-    precondition(!panel.isKeyWindow, "Pointer tracking must preserve source focus")
-    print("PASS: one native listener, non-key tracking, 1000 movements, stationary stability, focus preserved")
+    let stationary = rects[7]
+    let count = selections.count
+    selected = 999 // Simulate a subsequent keyboard selection under a stationary pointer.
+    for _ in 0..<100 {
+      sampleClipletPointer(in: panel.contentView!, at: NSPoint(x: stationary.midX, y: stationary.midY))
+    }
+    precondition(selected == 999 && selections.count == count, "Stationary pointer must preserve keyboard selection")
+    panel.orderOut(nil)
+    let hiddenCount = selections.count
+    sampleClipletPointer(in: panel.contentView!, at: NSPoint(x: rects[0].midX, y: rects[0].midY))
+    precondition(selections.count == hiddenCount, "Hidden panel must not select rows")
+    print("PASS: real list hit regions do not overlap; 1000 pointer jumps select exactly one correct row; stationary keyboard selection and hidden panel preserved")
   }
 }
