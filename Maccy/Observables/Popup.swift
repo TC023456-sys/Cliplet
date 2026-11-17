@@ -122,6 +122,12 @@ class Popup {
   private func handleFirstKeyDown() {
     if isClosed() {
       open(height: height)
+      if AppState.shared.appDelegate?.panel.preservesSourceFocus == true {
+        // Keep the global toggle available; this panel intentionally receives
+        // no key events until the user explicitly clicks its search field.
+        state = .toggle
+        return
+      }
       state = .opening
       KeyboardShortcuts.disable(.popup)  // Handle events via eventsMonitor. Re-enable on popup close
       return

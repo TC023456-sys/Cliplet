@@ -39,7 +39,7 @@ struct ContentView: View {
             )
             .padding(.horizontal, Popup.horizontalPadding)
             .onAppear {
-              searchFocused = true
+              searchFocused = appState.appDelegate?.panel?.preservesSourceFocus != true
             }
             .onMouseMove {
               appState.navigator.isKeyboardNavigating = false

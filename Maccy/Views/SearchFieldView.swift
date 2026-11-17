@@ -20,6 +20,9 @@ struct SearchFieldView: View {
           .opacity(0.8)
 
         TextField(placeholder, text: $query)
+          .simultaneousGesture(TapGesture().onEnded {
+            appState.appDelegate?.panel.beginKeyboardInput()
+          })
           .disableAutocorrection(true)
           .lineLimit(1)
           .textFieldStyle(.plain)
